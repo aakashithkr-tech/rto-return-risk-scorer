@@ -27,12 +27,13 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from fastapi import FastAPI, HTTPException  # noqa: E402
+from fastapi import FastAPI, HTTPException, Query  # noqa: E402
 from fastapi.responses import FileResponse, JSONResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 from pydantic import BaseModel, Field, field_validator  # noqa: E402
 
 from src.interpret import GEMINI_MODEL, gemini_available  # noqa: E402
+from src.history import init_db, list_predictions, save_prediction  # noqa: E402
 from src.serving import (  # noqa: E402
     UnknownPincode,
     get_service,
@@ -131,7 +132,8 @@ class ScoreOut(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load the model once, at startup — never per request."""
+    """Load the model and initialise prediction storage."""
+    init_db()
     get_service()
     yield
 
@@ -206,8 +208,17 @@ def score(order: OrderIn, explain_plainly: bool = True) -> dict:
     payload = order.model_dump()
     payload["customer_history"] = order.customer_history.model_dump()
     try:
-        return score_order(payload, interpret=explain_plainly)
+        result = score_order(payload, interpret=explain_plainly)
+        save_prediction(result)
+        return result
     except UnknownPincode as exc:
         raise HTTPException(422, str(exc)) from exc
     except (KeyError, ValueError) as exc:
         raise HTTPException(422, f"could not score this order: {exc}") from exc
+
+
+
+@app.get("/predictions", tags=["history"])
+def get_predictions(limit: int = Query(default=20, ge=1, le=100)) -> dict:
+    """List recent scoring records; never returns delivery addresses."""
+    return {"count": len(records := list_predictions(limit=limit)), "predictions": records}

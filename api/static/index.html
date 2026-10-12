@@ -77,6 +77,29 @@
     <button id="go">Score this order</button>
   </div>
 
+
+  <div class="card" id="history-card">
+    <div class="step">3 · Recent Predictions</div>
+    <p class="muted">Latest orders scored by the risk model.</p>
+    <button id="refresh-history" type="button">Refresh history</button>
+    <div id="history-status" class="muted" style="margin-top:12px">
+      History has not loaded yet.
+    </div>
+    <div style="overflow-x:auto">
+      <table style="width:100%;margin-top:12px;text-align:left">
+        <thead>
+          <tr>
+            <th>Order ID</th>
+            <th>RTO risk</th>
+            <th>Decision</th>
+            <th>Time (UTC)</th>
+          </tr>
+        </thead>
+        <tbody id="history-rows"></tbody>
+      </table>
+    </div>
+  </div>
+
   <div id="out" style="display:none">
     <div class="card">
       <div class="step">In plain English<span class="tag" id="src"></span></div>
@@ -221,8 +244,53 @@ function render(r){
   $("reasons").innerHTML = (r.reasons||[]).map(x=>`<li>${x}</li>`).join("") || "<li>No single factor stood out.</li>";
 }
 
-$("go").onclick = score;
+
+async function loadHistory() {
+  const status = $("history-status");
+  const rows = $("history-rows");
+  status.textContent = "Loading history...";
+  rows.replaceChildren();
+
+  try {
+    const response = await fetch("/predictions?limit=10");
+    if (!response.ok) throw new Error("History request failed (" + response.status + ")");
+
+    const data = await response.json();
+    status.textContent = data.count
+      ? `Showing ${data.count} recent prediction(s).`
+      : "No predictions saved yet. Score an order first.";
+
+    for (const item of data.predictions) {
+      const tr = document.createElement("tr");
+      const values = [
+        item.order_id,
+        `${(item.rto_probability * 100).toFixed(1)}%`,
+        item.action_label,
+        item.created_at ? new Date(item.created_at).toLocaleString() : "—"
+      ];
+
+      for (const value of values) {
+        const td = document.createElement("td");
+        td.textContent = value ?? "—";
+        td.style.padding = "8px 6px";
+        tr.appendChild(td);
+      }
+      rows.appendChild(tr);
+    }
+  } catch (error) {
+    status.textContent = error.message + ". Please retry.";
+  }
+}
+
+$("refresh-history").onclick = loadHistory;
+
+$("go").onclick = async function () {
+  await score();
+  await loadHistory();
+};
+
 boot();
+
 </script>
 </body>
 </html>
