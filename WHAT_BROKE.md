@@ -557,6 +557,12 @@ demo read well.
 result. Whether a three-tier policy is worth shipping at all depends on real
 fee-abandonment data we do not have — same conclusion as #15, now with a sharper symptom.
 
+**Update, 12 Oct 2026.** The current README does not contain the two tier tables described
+under "Recovery" above. Its "What it gets wrong" section instead states that the allow tier
+never fires for a cash order. The prepaid/COD split is in this entry; `reports/METRICS.md`
+§4 shows the three-tier table by share of all orders only, without that split. Neither
+table was regenerated for this update.
+
 ---
 
 ## 20. The demo's input contract does not match a checkout payload

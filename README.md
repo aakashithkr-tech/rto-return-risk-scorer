@@ -4,6 +4,13 @@
 
 Razorpay AI Buildathon 2026 · Track 02, AI Risk Manager
 
+> **Read this first.** There is no public dataset of Indian cash-on-delivery orders with
+> return outcomes. This model was trained and tested on 50,000 **synthetic** orders
+> generated to match published Indian statistics. Every performance figure below comes from
+> that synthetic data, and **nothing here has been validated on real merchant data.**
+> Rupee figures use **assumed** cost parameters (for example ₹200 lost per returned order),
+> not measured merchant losses.
+
 [![Live demo](https://img.shields.io/badge/demo-live-2ea44f)](https://cod-return-risk-scorer.onrender.com/)
 [![Tests](https://github.com/lucky07-07/rto-return-risk-scorer/actions/workflows/tests.yml/badge.svg)](https://github.com/lucky07-07/rto-return-risk-scorer/actions/workflows/tests.yml)
 [![Python 3.13](https://img.shields.io/badge/python-3.13-blue)](https://www.python.org/)
@@ -28,7 +35,8 @@ About 6 in 10 online orders in India are paid cash on delivery. Roughly **1 in 4
 never gets delivered**. The customer isn't home, changes their mind, or refuses at the
 door. The seller has already paid to ship it out and now pays to ship it back, plus
 packaging and handling. Nothing is collected. Across Indian e-commerce that's an estimated
-₹8,000 crore a year.
+₹8,000 crore a year. These are published industry figures, not measured by this project;
+the sources are listed in [`config/evidence.yaml`](config/evidence.yaml).
 
 This tool looks at an order **before it ships** and answers one question. Is this one
 likely to come back?
@@ -41,16 +49,29 @@ You give it an order. It gives you four things, in plain English.
 |---|---|
 | **How risky** | A percentage chance this order comes back |
 | **What it costs** | The rupees you'd expect to waste shipping it |
-| **What to do** | Allow cash on delivery, add a small fee, or ask for online payment |
+| **What to do** | A suggested action for a cash-on-delivery order: allow it, add a small fee, or ask for online payment. This is a policy applied to the risk percentage, not part of the prediction itself |
 | **Why** | The actual reasons, like a vague address or a customer who has returned before |
 
 It only ever advises. It never blocks a customer, takes money, or contacts anyone.
 
+The demo and API use three labels for the suggested action:
+
+| Demo label | API `action` | What it suggests |
+|---|---|---|
+| ALLOW | `allow_cod` | Offer cash on delivery as normal. In the shipped model only prepaid orders land here, so a cash order is never allowed straight through. |
+| REVIEW | `charge_cod_fee` | Offer cash on delivery with a small fee. |
+| BLOCK | `disable_cod` | Ask for online payment instead of offering cash on delivery. Nothing is actually blocked. |
+
+The tier cut-offs (0.05 and 0.40) depend on assumed fee costs and should be treated as
+provisional. The separate 0.37 flagging threshold is the cost-minimising point on validation.
+
 ## Results
 
-### What it's worth
+### What it's worth (synthetic data, assumed costs)
 
-Tested on 10,000 orders the model had never seen.
+Tested on 10,000 held-out **synthetic** orders the model had never seen, using **assumed**
+cost parameters. These are demonstration figures for the method, not measured merchant
+savings.
 
 | | |
 |---|---|
@@ -102,7 +123,8 @@ which is what you want from a risk model somebody has to defend.
 
 ![Prevalence sweep from 18 to 35 percent showing ranking holds while calibration drifts, and the correction that fixes it](reports/figures/05_prevalence_shift.png)
 
-Return rates vary from about 18% in Vadodara to 35% in Patna. This is the model tested
+Published return rates vary from about 18% in Vadodara to 35% in Patna (Shipway ShipNotes
+FY25, as recorded in `config/evidence.yaml`). This is the model tested, on synthetic data,
 across that whole range, and it is the direct answer to the failure that sinks tools like
 this. **The ranking holds everywhere.** What breaks is the *calibration*, the bottom-right
 panel, which quietly moves the cheapest threshold to the wrong place. One line of
@@ -296,7 +318,10 @@ Everything above is deliberately free of jargon. The rigour is all still here, i
   apparent score by 0.17 AUC, which notebook `02` measures rather than assumes.
 - 11 models benchmarked on identical folds, then Optuna and FLAML compared head to head on
   an identical wall-clock budget.
-- The test set was opened once, at settings frozen on validation beforehand.
+- The test set was scored at settings frozen on validation beforehand. The test section of
+  notebook `05` ran twice with an identical computation, and the result informed one set of
+  decisions (see `WHAT_BROKE.md` #17 and `test_evaluations_executed` in
+  `reports/results/05_final_metrics.json`).
 - Performance is reported across the full 18% to 35% return range seen across Indian cities,
   so behaviour under a shifted base rate is measured rather than assumed.
 
@@ -320,18 +345,35 @@ every order they have. It still beats doing nothing, but such a seller should ex
 lower end of the range.
 
 **The "allow" tier never actually fires for a cash order.**
-Every cash-on-delivery order gets either a fee or a request for online payment. Nothing is
-waved straight through. That falls out of the economics assumed for the fee, and it is
-reported rather than tidied away.
+In the shipped model every order in the allow tier is prepaid. Every cash-on-delivery order
+gets either a fee or a request for online payment, and nothing is waved straight through.
+The cause is the assumed fee economics: the tier search pushed the lower cut-off (0.05) to
+the edge of its search grid, and almost no cash order scores that low. This is reported
+rather than tidied away (`WHAT_BROKE.md` #19).
+
+**Customer history assumes earlier outcomes are known immediately.**
+`past_rto_count` and `past_rto_rate` count the outcome of each earlier order as soon as that
+order is placed. In real operations a return outcome is not known until the shipment
+resolves, which can take days or weeks, so a recent previous order would not yet have one.
+The generated data models no resolution delay, so these history features may look stronger
+here than they would in production. This has not been measured, and no reported metric has
+been recomputed. When scoring live orders, supply only outcomes already resolved at scoring
+time.
 
 **Two numbers in the cost model are guesses.**
 The fee amount, and how many customers walk away when shown a fee, have no published source.
-The main threshold does not depend on them and is solid. The three-tier split does depend on
-them and should be treated as provisional.
+The 0.37 threshold was selected on synthetic validation data under the specified cost
+model. Sensitivity analysis found cost-optimal thresholds between 0.21 and 0.48 across the
+tested shipping-cost and margin assumptions, so the selected threshold depends on the assumed
+economics. Its real-world performance has not been established. The three-tier split also
+depends on the fee amount and fee-abandonment assumption and should be treated as provisional.
 
 **A simple model did just as well.**
-Plain logistic regression matched everything more sophisticated. Tuning made the model
-slightly worse on unseen orders. Both findings are reported in full rather than buried.
+Plain logistic regression matched everything more sophisticated. Across the six model and
+search-method combinations tried, tuning improved cross-validation scores but averaged
+−0.0037 PR-AUC on validation, so it did not reliably transfer. The shipped tuned CatBoost
+was one of the cells that gained (+0.0039 on validation), and it is not claimed to beat
+logistic regression. Both findings are reported in full rather than buried.
 
 ---
 
@@ -379,17 +421,20 @@ free CPU. Only Static Spaces are free, and those cannot run a Python service.
 
 ## Demo
 
-Three real orders, scored by the live model. Switch between them in the dropdown.
+Three orders sampled from the synthetic validation split, scored by the live model. Switch
+between them in the dropdown.
 
-**A risky order, so the tool says ask for online payment**
+**A risky order, so the tool suggests asking for online payment (shown as BLOCK)**
 
 ![The tool showing a BLOCK decision on a high-risk fashion order](docs/screenshots/block.png)
 
-**A middling order, so the tool says allow cash on delivery but add a fee**
+**A middling order, so the tool suggests allowing cash on delivery with a small fee (shown as REVIEW)**
 
 ![The tool showing a REVIEW decision on a moderate-risk order](docs/screenshots/review.png)
 
-**A safe order, so the tool lets it through**
+**A low-risk prepaid order (shown as ALLOW).** The allow tier contains no cash-on-delivery
+orders in the shipped model, so this example is already paid for and there is no cash
+decision to make.
 
 ![The tool showing an ALLOW decision on a low-risk order](docs/screenshots/allow.png)
 

@@ -49,7 +49,10 @@ class CustomerHistoryIn(BaseModel):
     """The merchant's own record of this customer.
 
     A checkout payload does not carry these; they come from the merchant's order
-    store. Omitting the block scores the order as a genuine first-time customer,
+    store. ``past_rto_count`` should count only earlier orders whose outcome is
+    already resolved at scoring time; the training data assumed outcomes were known
+    immediately (see DATA_CARD.md, limitation 8). Omitting the block scores the order
+    as a genuine first-time customer,
     which is a real and common case — 10% of the test split — and one the model
     handles measurably worse (see the exception list in `05`).
     """

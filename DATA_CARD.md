@@ -122,7 +122,7 @@ Raw plus causal history plus engineered features.
 
 | Added | Notes |
 |---|---|
-| `past_orders`, `past_rto_count`, `past_rto_rate`, `has_history` | expanding over that customer's **strictly earlier** orders. First-ever order → `past_rto_rate = NaN`, `has_history = 0`. Imputation is a modelling decision made in 02/03, not baked in here. |
+| `past_orders`, `past_rto_count`, `past_rto_rate`, `has_history` | expanding over that customer's **strictly earlier** orders. First-ever order → `past_rto_rate = NaN`, `has_history = 0`. Imputation is a modelling decision made in 02/03, not baked in here. **Timing caveat:** an earlier order's label is counted as soon as that order is placed; the generator models no outcome-resolution delay (see §7, limitation 8). |
 | `addr_token_count`, `addr_char_len`, `addr_digit_count`, `addr_comma_count`, `addr_has_house_number`, `addr_has_landmark`, `addr_gibberish_score`, `addr_quality_score` | extracted from the string by `src.features.address_features` |
 | `tier_ordinal`, `log_order_value`, `discount_amount`, `log_account_age`, `is_first_order`, `pincode_prefix3` | row-local, fit nothing |
 
@@ -186,6 +186,12 @@ it is read as leakage, not skill.**
 7. **The gibberish detector has false positives** on genuine low-vowel Indian place
    tokens. Its marginal signal is weak, which is reported honestly in `02` rather than
    engineered away.
+8. **No outcome-resolution delay in customer history.** `past_orders`, `past_rto_count` and
+   `past_rto_rate` include every strictly earlier order by the same customer, whether or not
+   that order's return outcome would yet be known at the time. In real operations an outcome
+   resolves days to weeks after the order, so a recent prior order would not yet contribute.
+   The effect on the history features' apparent strength, and on the reported metrics, has
+   not been measured. In a live setting, supply only resolved outcomes.
 
 ## 8. Reproducibility
 

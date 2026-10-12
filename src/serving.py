@@ -50,7 +50,10 @@ class CustomerHistory:
     """What the merchant knows about this customer before the order ships.
 
     A checkout payload does not carry these — they come from the merchant's own
-    order store. An unknown customer scores as a genuine first-time customer,
+    order store. ``past_rto_count`` should count only earlier orders whose outcome
+    is already resolved at scoring time; the training data assumed outcomes were
+    known immediately (see DATA_CARD.md, limitation 8). An unknown customer scores
+    as a genuine first-time customer,
     which is what ``past_rto_rate = None`` means to the model (`02` measured what
     that dilution costs: 0.029 AUC).
     """
